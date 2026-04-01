@@ -468,4 +468,3 @@ sudo systemctl start backup-system.service
 
 ---
 
-This architecture document now fully integrates Ubuntu Server as the host platform, providing a clear blueprint for deployment, management, and security hardening. The MVP can be demonstrated entirely on a single Ubuntu server, making it perfect for your capstone presentation. Good luck!
