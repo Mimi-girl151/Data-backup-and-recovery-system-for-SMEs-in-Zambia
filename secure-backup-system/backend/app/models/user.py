@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import uuid4
 from sqlalchemy import String, Boolean, DateTime, Index
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 from app.db.session import Base
 
@@ -11,7 +11,7 @@ class User(Base):
     
     __tablename__ = "users"
     
-    id: Mapped[UUID] = mapped_column(  # type: ignore[type-arg]
+    id: Mapped[UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
         default=uuid4,
@@ -52,6 +52,9 @@ class User(Base):
         onupdate=datetime.utcnow,
         nullable=False
     )
+    
+    # Relationships
+    files = relationship("FileMetadata", back_populates="user", cascade="all, delete-orphan")
     
     # Indexes
     __table_args__ = (

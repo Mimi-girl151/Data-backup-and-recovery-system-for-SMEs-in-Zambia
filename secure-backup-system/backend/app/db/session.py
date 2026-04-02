@@ -14,7 +14,7 @@ engine: AsyncEngine = create_async_engine(
     echo=settings.DEBUG,
     pool_size=settings.DATABASE_POOL_SIZE,
     max_overflow=settings.DATABASE_MAX_OVERFLOW,
-    pool_pre_ping=True,  # Verify connections before using
+    pool_pre_ping=True,
 )
 
 # Create async session factory
@@ -26,17 +26,12 @@ AsyncSessionLocal = async_sessionmaker(
     autoflush=False,
 )
 
-# Base class for models
+# Create declarative base
 Base = declarative_base()
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """
-    Dependency that provides a database session.
-    
-    Yields:
-        AsyncSession: Database session for the request.
-    """
+    """Dependency that provides a database session."""
     async with AsyncSessionLocal() as session:
         try:
             yield session
