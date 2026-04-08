@@ -3,15 +3,15 @@ import apiClient from './client';
 export const authApi = {
   /**
    * Register a new user
+   * @param {string} fullName - User full name
    * @param {string} email - User email
    * @param {string} password - User password
-   * @param {string} fullName - User full name
    * @returns {Promise} Registration response
    */
-  register: async (email, password, fullName) => {
+  register: async (fullName, email, password) => {
     const response = await apiClient.post('/auth/register', {
-      email,
-      password,
+      email: email,
+      password: password,
       full_name: fullName,
     });
     return response.data;
@@ -40,3 +40,10 @@ export const authApi = {
     return response.data;
   },
 };
+
+// Also export individual functions for convenience
+export const register = authApi.register;
+export const login = authApi.login;
+export const getMe = authApi.getMe;
+
+export default authApi;

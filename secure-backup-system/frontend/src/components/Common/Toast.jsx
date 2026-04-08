@@ -1,21 +1,14 @@
 import React, { useEffect } from 'react';
-import { create } from 'zustand';
+import { useUIStore } from '../../store/uiStore';
 
-// Simple toast store
-const useToastStore = create((set) => ({
-  notifications: [],
-  addNotification: (notification) =>
-    set((state) => ({
-      notifications: [...state.notifications, { ...notification, id: Date.now() }],
-    })),
-  removeNotification: (id) =>
-    set((state) => ({
-      notifications: state.notifications.filter((n) => n.id !== id),
-    })),
-}));
-
+/**
+ * Toast Notification Component
+ * 
+ * Displays temporary notification messages that auto-dismiss after 5 seconds.
+ * Supports different types: success, error, info, warning.
+ */
 const Toast = () => {
-  const { notifications, removeNotification } = useToastStore();
+  const { notifications, removeNotification } = useUIStore();
   
   useEffect(() => {
     const timers = notifications.map((notification) => {
@@ -49,6 +42,7 @@ const Toast = () => {
               <button
                 onClick={() => removeNotification(notification.id)}
                 className="ml-4 text-white hover:text-gray-200"
+                aria-label="Close notification"
               >
                 ×
               </button>
@@ -60,4 +54,8 @@ const Toast = () => {
   );
 };
 
+// Named export
+export { Toast };
+
+// Default export for convenience
 export default Toast;

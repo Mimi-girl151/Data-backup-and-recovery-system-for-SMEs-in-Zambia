@@ -1,20 +1,24 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
-import { register } from '../../api/auth';
 
 export default function Register() {
   const navigate = useNavigate();
-  const setAuth = useAuthStore((s) => s.setAuth);
+  const register = useAuthStore((s) => s.register);
 
-  const [form, setForm] = useState({ full_name: '', email: '', password: '' });
+  // Separate state variables for clarity
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  
   const [showPass, setShowPass] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // Password strength calculation
   const strength = (() => {
-    const v = form.password;
+    const v = password;
     let s = 0;
     if (v.length >= 8) s++;
     if (/[A-Z]/.test(v) && /[a-z]/.test(v)) s++;
@@ -26,32 +30,80 @@ export default function Register() {
   const strengthLabel = ['', 'Weak', 'Fair', 'Good', 'Strong'][strength];
   const strengthColor = ['', '#c0392b', '#e67e22', '#f1c40f', '#27ae60'][strength];
 
-  const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
-    setError('');
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.full_name || !form.email || !form.password) {
+    
+    // LOG 1: What the user entered
+    console.log('========== REGISTRATION DEBUG ==========');
+    console.log('LOG 1 - Form field values:');
+    console.log('  fullName (from Full Name input):', fullName);
+    console.log('  email (from Email input):', email);
+    console.log('  password (from Password input):', password);
+    console.log('=========================================');
+    
+    // Validation
+    if (!fullName || !email || !password) {
       setError('Please fill in all fields.');
+      console.log('ERROR: Missing fields');
       return;
     }
-    if (form.password.length < 8) {
+    if (password.length < 8) {
       setError('Password must be at least 8 characters.');
+      console.log('ERROR: Password too short');
       return;
     }
     if (!agreed) {
       setError('Please acknowledge the encryption notice.');
+      console.log('ERROR: Checkbox not agreed');
       return;
     }
+    
+    // LOG 2: What we are about to send to register function
+    console.log('LOG 2 - Calling register() with parameters (order matters!):');
+    console.log('  Parameter 1 (fullName):', fullName);
+    console.log('  Parameter 2 (email):', email);
+    console.log('  Parameter 3 (password):', password);
+    console.log('=========================================');
+    
     setLoading(true);
     try {
-      const data = await register(form.full_name, form.email, form.password);
-      setAuth(data.user, data.access_token);
-      navigate('/dashboard');
+      const result = await register(fullName, email, password);
+      
+      // LOG 3: What came back from register function
+      console.log('LOG 3 - Register result:', result);
+      
+      if (result.success) {
+        console.log('SUCCESS: Registration worked, redirecting to /login');
+        navigate('/login');
+      } else {
+        console.log('ERROR: Registration failed, result.error:', result.error);
+        if (typeof result.error === 'object') {
+          const errorMsg = result.error?.detail?.[0]?.msg || 'Registration failed';
+          setError(errorMsg);
+        } else {
+          setError(result.error || 'Registration failed. Please try again.');
+        }
+      }
     } catch (err) {
-      setError(err.response?.data?.detail || 'Registration failed. Please try again.');
+      // LOG 4: Catch any errors
+      console.log('LOG 4 - Exception caught:');
+      console.log('  err:', err);
+      console.log('  err.response:', err.response);
+      console.log('  err.response?.data:', err.response?.data);
+      console.log('  err.response?.data?.detail:', err.response?.data?.detail);
+      
+      if (err.response?.data?.detail) {
+        const detail = err.response.data.detail;
+        if (Array.isArray(detail)) {
+          setError(detail[0]?.msg || 'Validation failed');
+        } else if (typeof detail === 'string') {
+          setError(detail);
+        } else {
+          setError('Registration failed. Please try again.');
+        }
+      } else {
+        setError('Registration failed. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -64,7 +116,6 @@ export default function Register() {
       <div className="vg-orb vg-orb2" />
 
       <div className="vg-scene">
-        {/* LEFT */}
         <div className="vg-left">
           <div className="vg-ring-wrap">
             <div className="vg-ring-spin" />
@@ -99,7 +150,6 @@ export default function Register() {
 
         <div className="vg-divider" />
 
-        {/* RIGHT */}
         <div className="vg-right">
           <div className="vg-card">
             <div className="vg-tabs">
@@ -113,7 +163,7 @@ export default function Register() {
             </div>
 
             <form onSubmit={handleSubmit} className="vg-form" noValidate>
-              {/* Full Name */}
+              {/* Full Name Input */}
               <div className="vg-field">
                 <label className="vg-label">Full Name</label>
                 <div className="vg-input-wrap">
@@ -121,16 +171,18 @@ export default function Register() {
                   <input
                     className="vg-input"
                     type="text"
-                    name="full_name"
-                    value={form.full_name}
-                    onChange={handleChange}
+                    value={fullName}
+                    onChange={(e) => {
+                      console.log('Full Name input changed:', e.target.value);
+                      setFullName(e.target.value);
+                    }}
                     placeholder="Jane Doe"
                     autoComplete="name"
                   />
                 </div>
               </div>
 
-              {/* Email */}
+              {/* Email Input */}
               <div className="vg-field">
                 <label className="vg-label">Email Address</label>
                 <div className="vg-input-wrap">
@@ -138,16 +190,18 @@ export default function Register() {
                   <input
                     className="vg-input"
                     type="email"
-                    name="email"
-                    value={form.email}
-                    onChange={handleChange}
+                    value={email}
+                    onChange={(e) => {
+                      console.log('Email input changed:', e.target.value);
+                      setEmail(e.target.value);
+                    }}
                     placeholder="you@company.com"
                     autoComplete="email"
                   />
                 </div>
               </div>
 
-              {/* Password */}
+              {/* Password Input */}
               <div className="vg-field">
                 <label className="vg-label">Password</label>
                 <div className="vg-input-wrap">
@@ -155,9 +209,11 @@ export default function Register() {
                   <input
                     className="vg-input vg-input--pad-r"
                     type={showPass ? 'text' : 'password'}
-                    name="password"
-                    value={form.password}
-                    onChange={handleChange}
+                    value={password}
+                    onChange={(e) => {
+                      console.log('Password input changed:', e.target.value);
+                      setPassword(e.target.value);
+                    }}
                     placeholder="Min 8 chars, mixed case + numbers"
                     autoComplete="new-password"
                   />
@@ -165,8 +221,7 @@ export default function Register() {
                     {showPass ? <EyeOffIcon /> : <EyeIcon />}
                   </button>
                 </div>
-                {/* Strength bar */}
-                {form.password && (
+                {password && (
                   <div className="vg-strength">
                     <div className="vg-sbar">
                       {[1,2,3,4].map((i) => (
@@ -196,7 +251,11 @@ export default function Register() {
                 <input
                   type="checkbox"
                   checked={agreed}
-                  onChange={(e) => { setAgreed(e.target.checked); setError(''); }}
+                  onChange={(e) => { 
+                    console.log('Checkbox changed:', e.target.checked);
+                    setAgreed(e.target.checked); 
+                    setError(''); 
+                  }}
                   className="vg-chk-hidden"
                 />
                 <span className="vg-chkbox">
