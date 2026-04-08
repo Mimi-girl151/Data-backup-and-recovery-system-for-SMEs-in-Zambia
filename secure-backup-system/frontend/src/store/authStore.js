@@ -1,85 +1,59 @@
+// frontend/src/store/authStore.js
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import { authApi } from '../api/auth';
 
-export const useAuthStore = create(
-  persist(
-    (set, get) => ({
-      // State
-      user: null,
-      token: null,
-      isAuthenticated: false,
-      isLoading: false,
-      error: null,
-
-      // Actions
-      setAuth: (user, token) => {
-        set({
-          user,
-          token,
-          isAuthenticated: true,
-          error: null,
-        });
-      },
-
-      login: async (email, password) => {
-        set({ isLoading: true, error: null });
-        try {
-          const response = await authApi.login(email, password);
-          const { access_token, user } = response;
-          
-          set({
-            user,
-            token: access_token,
-            isAuthenticated: true,
-            isLoading: false,
-            error: null,
-          });
-          
-          return { success: true };
-        } catch (error) {
-          const errorMessage = error.response?.data?.detail || 'Login failed. Please check your credentials.';
-          set({
-            error: errorMessage,
-            isLoading: false,
-            isAuthenticated: false,
-          });
-          return { success: false, error: errorMessage };
+export const useAuthStore = create((set) => ({
+  user: null,
+  isLoading: false,
+  error: null,
+  
+  login: async (email, password, rememberMe) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await authApi.login(email, password);
+      
+      // Store token
+      if (response.access_token) {
+        localStorage.setItem('token', response.access_token);
+        if (rememberMe) {
+          localStorage.setItem('rememberMe', 'true');
         }
-      },
-
-      register: async (email, password, fullName) => {
-        set({ isLoading: true, error: null });
-        try {
-          await authApi.register(email, password, fullName);
-          set({ isLoading: false });
-          return { success: true };
-        } catch (error) {
-          const errorMessage = error.response?.data?.detail || 'Registration failed. Please try again.';
-          set({
-            error: errorMessage,
-            isLoading: false,
-          });
-          return { success: false, error: errorMessage };
-        }
-      },
-
-      logout: () => {
-        set({
-          user: null,
-          token: null,
-          isAuthenticated: false,
-          error: null,
-        });
-      },
-
-      clearError: () => set({ error: null }),
-
-      getToken: () => get().token,
-    }),
-    {
-      name: 'auth-storage',
-      getStorage: () => localStorage,
+      }
+      
+      set({ user: response.user || { email }, isLoading: false });
+      return true;
+    } catch (error) {
+      set({ error: error.response?.data?.message || 'Login failed', isLoading: false });
+      return false;
     }
-  )
-);
+  },
+  
+  register: async (userData) => {
+    set({ isLoading: true, error: null });
+    try {
+      const response = await authApi.register(
+        userData.email, 
+        userData.password, 
+        userData.name
+      );
+      
+      if (response.access_token) {
+        localStorage.setItem('token', response.access_token);
+      }
+      
+      set({ user: response.user || { email: userData.email }, isLoading: false });
+      return true;
+    } catch (error) {
+      set({ error: error.response?.data?.message || 'Registration failed', isLoading: false });
+      return false;
+    }
+  },
+  
+  logout: async () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('rememberMe');
+    set({ user: null, error: null });
+  },
+  
+  clearError: () => set({ error: null })
+}));

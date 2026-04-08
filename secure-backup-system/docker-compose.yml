@@ -12,7 +12,7 @@ services:
       - ./postgres/data/pgdata:/var/lib/postgresql/data
       - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     ports:
-      - "${DB_PORT:-5433}:5432"
+      - "${DB_PORT:-5435}:5432"
     networks:
       - backup-network
     healthcheck:
