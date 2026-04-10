@@ -26,7 +26,6 @@ export const useAuthStore = create(
           const response = await authApi.login(email, password);
           const { access_token, user } = response;
           
-          // Store token
           if (access_token) {
             localStorage.setItem('token', access_token);
             if (rememberMe) {
@@ -44,7 +43,17 @@ export const useAuthStore = create(
           
           return { success: true };
         } catch (error) {
-          const errorMessage = error.response?.data?.detail || 'Login failed. Please check your credentials.';
+          console.error('Login error:', error);
+          
+          let errorMessage = 'Login failed. Please check your credentials.';
+          if (error.response?.data?.detail) {
+            if (typeof error.response.data.detail === 'string') {
+              errorMessage = error.response.data.detail;
+            } else if (Array.isArray(error.response.data.detail) && error.response.data.detail.length > 0) {
+              errorMessage = error.response.data.detail[0].msg || errorMessage;
+            }
+          }
+          
           set({
             error: errorMessage,
             isLoading: false,
@@ -58,12 +67,24 @@ export const useAuthStore = create(
         set({ isLoading: true, error: null });
         try {
           const response = await authApi.register(fullName, email, password);
-          
-          // Don't auto-login after registration - just return success
+          console.log('Registration successful:', response);
           set({ isLoading: false });
           return { success: true };
         } catch (error) {
-          const errorMessage = error.response?.data?.detail || 'Registration failed. Please try again.';
+          console.error('Registration error in store:', error);
+          
+          let errorMessage = 'Registration failed. Please try again.';
+          
+          if (error.response?.data?.detail) {
+            if (typeof error.response.data.detail === 'string') {
+              errorMessage = error.response.data.detail;
+            } else if (Array.isArray(error.response.data.detail) && error.response.data.detail.length > 0) {
+              errorMessage = error.response.data.detail[0].msg || errorMessage;
+            }
+          } else if (error.response?.data?.message) {
+            errorMessage = error.response.data.message;
+          }
+          
           set({
             error: errorMessage,
             isLoading: false,
@@ -86,7 +107,6 @@ export const useAuthStore = create(
       clearError: () => set({ error: null }),
 
       getToken: () => {
-        // First check state, then localStorage
         const token = get().token;
         if (token) return token;
         return localStorage.getItem('token');
@@ -94,7 +114,7 @@ export const useAuthStore = create(
     }),
     {
       name: 'auth-storage',
-      getStorage: () => localStorage,
+      storage: localStorage,
       partialize: (state) => ({
         user: state.user,
         token: state.token,

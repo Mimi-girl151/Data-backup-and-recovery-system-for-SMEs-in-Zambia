@@ -33,77 +33,48 @@ export default function Register() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    // LOG 1: What the user entered
-    console.log('========== REGISTRATION DEBUG ==========');
-    console.log('LOG 1 - Form field values:');
-    console.log('  fullName (from Full Name input):', fullName);
-    console.log('  email (from Email input):', email);
-    console.log('  password (from Password input):', password);
-    console.log('=========================================');
-    
     // Validation
     if (!fullName || !email || !password) {
       setError('Please fill in all fields.');
-      console.log('ERROR: Missing fields');
       return;
     }
     if (password.length < 8) {
       setError('Password must be at least 8 characters.');
-      console.log('ERROR: Password too short');
       return;
     }
     if (!agreed) {
       setError('Please acknowledge the encryption notice.');
-      console.log('ERROR: Checkbox not agreed');
       return;
     }
     
-    // LOG 2: What we are about to send to register function
-    console.log('LOG 2 - Calling register() with parameters (order matters!):');
-    console.log('  Parameter 1 (fullName):', fullName);
-    console.log('  Parameter 2 (email):', email);
-    console.log('  Parameter 3 (password):', password);
-    console.log('=========================================');
-    
     setLoading(true);
+    setError('');
+    
     try {
       const result = await register(fullName, email, password);
       
-      // LOG 3: What came back from register function
-      console.log('LOG 3 - Register result:', result);
-      
       if (result.success) {
-        console.log('SUCCESS: Registration worked, redirecting to /login');
         navigate('/login');
       } else {
-        console.log('ERROR: Registration failed, result.error:', result.error);
-        if (typeof result.error === 'object') {
-          const errorMsg = result.error?.detail?.[0]?.msg || 'Registration failed';
-          setError(errorMsg);
-        } else {
-          setError(result.error || 'Registration failed. Please try again.');
-        }
+        // Display the error message from the store
+        setError(result.error || 'Registration failed. Please try again.');
       }
     } catch (err) {
-      // LOG 4: Catch any errors
-      console.log('LOG 4 - Exception caught:');
-      console.log('  err:', err);
-      console.log('  err.response:', err.response);
-      console.log('  err.response?.data:', err.response?.data);
-      console.log('  err.response?.data?.detail:', err.response?.data?.detail);
+      console.error('Registration error:', err);
       
+      // Extract error message from response
+      let errorMessage = 'Registration failed. Please try again.';
       if (err.response?.data?.detail) {
-        const detail = err.response.data.detail;
-        if (Array.isArray(detail)) {
-          setError(detail[0]?.msg || 'Validation failed');
-        } else if (typeof detail === 'string') {
-          setError(detail);
-        } else {
-          setError('Registration failed. Please try again.');
+        if (typeof err.response.data.detail === 'string') {
+          errorMessage = err.response.data.detail;
+        } else if (Array.isArray(err.response.data.detail) && err.response.data.detail.length > 0) {
+          errorMessage = err.response.data.detail[0].msg || errorMessage;
         }
-      } else {
-        setError('Registration failed. Please try again.');
+      } else if (err.response?.data?.message) {
+        errorMessage = err.response.data.message;
       }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -172,10 +143,7 @@ export default function Register() {
                     className="vg-input"
                     type="text"
                     value={fullName}
-                    onChange={(e) => {
-                      console.log('Full Name input changed:', e.target.value);
-                      setFullName(e.target.value);
-                    }}
+                    onChange={(e) => setFullName(e.target.value)}
                     placeholder="Jane Doe"
                     autoComplete="name"
                   />
@@ -191,10 +159,7 @@ export default function Register() {
                     className="vg-input"
                     type="email"
                     value={email}
-                    onChange={(e) => {
-                      console.log('Email input changed:', e.target.value);
-                      setEmail(e.target.value);
-                    }}
+                    onChange={(e) => setEmail(e.target.value)}
                     placeholder="you@company.com"
                     autoComplete="email"
                   />
@@ -210,10 +175,7 @@ export default function Register() {
                     className="vg-input vg-input--pad-r"
                     type={showPass ? 'text' : 'password'}
                     value={password}
-                    onChange={(e) => {
-                      console.log('Password input changed:', e.target.value);
-                      setPassword(e.target.value);
-                    }}
+                    onChange={(e) => setPassword(e.target.value)}
                     placeholder="Min 8 chars, mixed case + numbers"
                     autoComplete="new-password"
                   />
@@ -252,7 +214,6 @@ export default function Register() {
                   type="checkbox"
                   checked={agreed}
                   onChange={(e) => { 
-                    console.log('Checkbox changed:', e.target.checked);
                     setAgreed(e.target.checked); 
                     setError(''); 
                   }}
@@ -264,7 +225,13 @@ export default function Register() {
                 <span>I understand files are encrypted with my password as the AES-256 key source.</span>
               </label>
 
-              {error && <p className="vg-error">{error}</p>}
+              {/* Error message display */}
+              {error && (
+                <div className="vg-error">
+                  <span>⚠️ </span>
+                  {error}
+                </div>
+              )}
 
               <button type="submit" className="vg-cta" disabled={loading}>
                 {loading ? (
