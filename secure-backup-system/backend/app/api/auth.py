@@ -1,11 +1,12 @@
 from datetime import timedelta
 from typing import Annotated
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.db.session import get_db
 from app.models.user import User
+from app.models.audit_log import AuditLog
 from app.schemas.user import (
     UserCreate,
     UserLogin,
@@ -184,3 +185,62 @@ async def get_me(
         is_active=current_user.is_active,
         created_at=current_user.created_at
     )
+
+
+@router.post(
+    "/change-password",
+    summary="Change user password",
+    description="Change password for the currently authenticated user"
+)
+async def change_password(
+    old_password: str = Form(...),
+    new_password: str = Form(...),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Change user password.
+    Requires old password for verification.
+    
+    Args:
+        old_password: Current password
+        new_password: New password (min 8 characters)
+        current_user: Authenticated user
+        db: Database session
+        
+    Returns:
+        dict: Success message
+        
+    Raises:
+        HTTPException: If old password is incorrect or new password too short
+    """
+    # Verify old password
+    if not verify_password(old_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Incorrect password"
+        )
+    
+    # Validate new password length
+    if len(new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 8 characters"
+        )
+    
+    # Hash new password
+    current_user.hashed_password = get_password_hash(new_password)
+    
+    # Log password change
+    audit_log = AuditLog(
+        user_id=current_user.id,
+        action="PASSWORD_CHANGE",
+        resource="user",
+        resource_id=str(current_user.id),
+        details={"email": current_user.email},
+    )
+    db.add(audit_log)
+    
+    await db.commit()
+    
+    return {"success": True, "message": "Password changed successfully"}
