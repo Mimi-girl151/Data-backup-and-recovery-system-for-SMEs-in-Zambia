@@ -1,14 +1,18 @@
 import { useState } from 'react';
 import { useAuthStore } from '../../store/authStore';
 import { Link } from 'react-router-dom';
+import { filesApi } from '../../api/files';
 
 export default function BackupPage() {
   const { user } = useAuthStore();
   const [selectedFile, setSelectedFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [encryptionPassword, setEncryptionPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showPasswordInput, setShowPasswordInput] = useState(false);
 
   const navItems = [
     { label: 'Dashboard', icon: <HomeIcon />, path: '/dashboard' },
@@ -21,39 +25,57 @@ export default function BackupPage() {
     const file = e.target.files[0];
     if (file) {
       setSelectedFile(file);
-      setMessage('');
+      setMessage(null);
+      setShowPasswordInput(true);
+      setEncryptionPassword('');
+      setShowPassword(false);
     }
   };
 
   const handleUpload = async () => {
     if (!selectedFile) {
-      setMessage('Please select a file first.');
+      setMessage({ type: 'error', text: 'Please select a file first.' });
+      return;
+    }
+
+    if (!encryptionPassword || encryptionPassword.length < 4) {
+      setMessage({ type: 'error', text: 'Please enter an encryption password (min 4 characters).' });
       return;
     }
 
     setUploading(true);
     setProgress(0);
-    setMessage('');
+    setMessage(null);
 
-    // Simulate upload progress
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += 10;
-      setProgress(progress);
-      if (progress >= 100) {
-        clearInterval(interval);
-        setUploading(false);
-        setMessage({ type: 'success', text: 'File uploaded successfully! (Demo - encryption coming soon)' });
-        setSelectedFile(null);
-      }
-    }, 500);
+    try {
+      const response = await filesApi.uploadFile(
+        selectedFile,
+        encryptionPassword,
+        (p) => setProgress(p)
+      );
+      
+      setMessage({ type: 'success', text: `File "${selectedFile.name}" uploaded successfully!` });
+      setSelectedFile(null);
+      setShowPasswordInput(false);
+      setEncryptionPassword('');
+      
+      const fileInput = document.getElementById('file-upload');
+      if (fileInput) fileInput.value = '';
+      
+    } catch (error) {
+      console.error('Upload error:', error);
+      const errorMsg = error.response?.data?.detail || 'Upload failed. Please try again.';
+      setMessage({ type: 'error', text: errorMsg });
+    } finally {
+      setUploading(false);
+    }
   };
 
   const formatBytes = (bytes) => {
     if (!bytes) return '0 Bytes';
-    if (bytes >= 1e9) return (bytes / 1e9).toFixed(1) + ' GB';
-    if (bytes >= 1e6) return (bytes / 1e6).toFixed(1) + ' MB';
-    if (bytes >= 1e3) return (bytes / 1e3).toFixed(1) + ' KB';
+    if (bytes >= 1e9) return (bytes / 1e9).toFixed(2) + ' GB';
+    if (bytes >= 1e6) return (bytes / 1e6).toFixed(2) + ' MB';
+    if (bytes >= 1e3) return (bytes / 1e3).toFixed(2) + ' KB';
     return bytes + ' Bytes';
   };
 
@@ -61,7 +83,6 @@ export default function BackupPage() {
     <div className="db-root">
       <div className="db-grid" />
 
-      {/* Sidebar */}
       <aside className={`db-sidebar ${sidebarOpen ? 'db-sidebar--open' : 'db-sidebar--closed'}`}>
         <div className="db-logo">
           <VaultIcon />
@@ -99,7 +120,6 @@ export default function BackupPage() {
         </div>
       </aside>
 
-      {/* Main Content */}
       <main className="db-main">
         <header className="db-header">
           <div className="db-header-left">
@@ -121,6 +141,7 @@ export default function BackupPage() {
 
         <div className="db-content">
           <div className="db-section">
+            {/* File Selection */}
             <div className="border-2 border-dashed border-border rounded-xl p-8 text-center hover:border-ember transition-colors cursor-pointer">
               <input
                 type="file"
@@ -142,11 +163,40 @@ export default function BackupPage() {
               </label>
             </div>
 
+            {/* Encryption Password Input with Show/Hide Toggle */}
+            {showPasswordInput && selectedFile && !uploading && (
+              <div className="mt-4 p-4 bg-surface2 rounded-lg border border-border">
+                <label className="block text-sm font-medium text-white mb-2">
+                  Encryption Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    className="w-full px-4 py-2 rounded-lg text-white focus:outline-none focus:border-ember pr-10" style={{ backgroundColor: "#1a2730", color: "#f0ece8", border: "1px solid rgba(166,62,27,0.2)" }}
+                    placeholder="Enter a password to encrypt this file"
+                    value={encryptionPassword}
+                    onChange={(e) => setEncryptionPassword(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-muted hover:text-white"
+                    onClick={() => setShowPassword(!showPassword)}
+                  >
+                    {showPassword ? '🙈' : '👁️'}
+                  </button>
+                </div>
+                <p className="text-xs text-muted mt-2">
+                  ⚠️ This password will be needed to decrypt the file. Store it safely!
+                </p>
+              </div>
+            )}
+
+            {/* Progress Bar */}
             {uploading && (
               <div className="mt-4">
                 <div className="flex justify-between text-sm text-muted mb-1">
-                  <span>Uploading...</span>
-                  <span>{progress}%</span>
+                  <span>Encrypting and uploading...</span>
+                  <span>{Math.round(progress)}%</span>
                 </div>
                 <div className="w-full h-2 bg-border rounded-full overflow-hidden">
                   <div 
@@ -157,22 +207,25 @@ export default function BackupPage() {
               </div>
             )}
 
+            {/* Message Display */}
             {message && (
               <div className={`mt-4 p-3 rounded-lg text-sm ${
                 message.type === 'success' 
                   ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
                   : 'bg-red-500/20 text-red-400 border border-red-500/30'
               }`}>
-                {typeof message === 'string' ? message : message.text}
+                {message.type === 'success' ? '✅' : '❌'} {message.text}
               </div>
             )}
 
-            {selectedFile && !uploading && (
+            {/* Upload Button */}
+            {selectedFile && !uploading && showPasswordInput && (
               <button
                 onClick={handleUpload}
-                className="mt-4 w-full py-3 bg-gradient-to-r from-ember to-ember-l text-white font-semibold rounded-lg hover:opacity-90 transition-opacity"
+                disabled={!encryptionPassword || encryptionPassword.length < 4}
+                className="mt-4 w-full py-3 bg-gradient-to-r from-ember to-ember-l text-white font-semibold rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Upload File
+                🔒 Encrypt & Upload
               </button>
             )}
           </div>
@@ -180,8 +233,9 @@ export default function BackupPage() {
           <div className="db-section">
             <h3 className="text-white font-medium mb-2">Security Notice</h3>
             <p className="text-muted text-sm">
-              Your files will be encrypted with AES-256-GCM before upload. 
-              The server never sees your unencrypted data.
+              Your files are encrypted with AES-256-GCM <strong>before</strong> they leave your browser.
+              The encryption key is derived from your password using PBKDF2 (100,000 iterations).
+              The server never sees your unencrypted data or your encryption password.
             </p>
           </div>
         </div>

@@ -2,7 +2,7 @@ import uuid
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from app.db.session import get_db
 from app.models.user import User
 from app.models.file_metadata import FileMetadata
@@ -233,3 +233,62 @@ async def delete_file(
     await db.commit()
     
     return {"success": True, "message": "File deleted successfully"}
+
+
+@router.get("/stats")
+async def get_storage_stats(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get storage statistics for the current user."""
+    # Get total files and storage used
+    result = await db.execute(
+        select(
+            func.count(FileMetadata.id).label("total_files"),
+            func.sum(FileMetadata.file_size).label("total_storage")
+        )
+        .where(FileMetadata.user_id == current_user.id)
+        .where(FileMetadata.status == "active")
+    )
+    stats = result.one()
+    
+    # Get last backup date
+    result = await db.execute(
+        select(FileMetadata.created_at)
+        .where(FileMetadata.user_id == current_user.id)
+        .where(FileMetadata.status == "active")
+        .order_by(FileMetadata.created_at.desc())
+        .limit(1)
+    )
+    last_backup = result.scalar_one_or_none()
+    
+    # Get recent files (last 5)
+    result = await db.execute(
+        select(FileMetadata)
+        .where(FileMetadata.user_id == current_user.id)
+        .where(FileMetadata.status == "active")
+        .order_by(FileMetadata.created_at.desc())
+        .limit(5)
+    )
+    recent_files = result.scalars().all()
+    
+    # 5GB default limit for SMEs
+    storage_limit_bytes = 5 * 1024 * 1024 * 1024
+    total_storage = stats.total_storage or 0
+    
+    return {
+        "total_files": stats.total_files or 0,
+        "total_storage_bytes": total_storage,
+        "storage_limit_bytes": storage_limit_bytes,
+        "storage_used_percent": round((total_storage / storage_limit_bytes) * 100, 1) if total_storage else 0,
+        "last_backup": last_backup.isoformat() if last_backup else None,
+        "recent_files": [
+            {
+                "id": str(f.id),
+                "original_filename": f.original_filename,
+                "size": f.file_size,
+                "created_at": f.created_at.isoformat(),
+            }
+            for f in recent_files
+        ],
+    }

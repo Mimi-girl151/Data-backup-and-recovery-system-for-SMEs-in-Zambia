@@ -1,35 +1,42 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
-import { getDashboardStats } from '../../api/dashboard';
+import { getStorageStats } from '../../api/files';
 
 export default function DashboardHome() {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   useEffect(() => {
-    getDashboardStats()
-      .then(setStats)
-      .catch(() => {
-        // fallback demo data if API isn't wired yet
-        setStats({
-          total_files: 24,
-          storage_used_bytes: 1_540_000_000,
-          storage_limit_bytes: 5_000_000_000,
-          last_backup: '2026-04-06T08:22:00Z',
-          recent_files: [
-            { id: 1, original_filename: 'Q1-Report.pdf', size: 2400000, created_at: '2026-04-06T08:22:00Z' },
-            { id: 2, original_filename: 'client-contracts.zip', size: 15800000, created_at: '2026-04-05T14:10:00Z' },
-            { id: 3, original_filename: 'database-export.sql', size: 890000, created_at: '2026-04-04T11:55:00Z' },
-            { id: 4, original_filename: 'payroll-march.xlsx', size: 340000, created_at: '2026-04-03T09:30:00Z' },
-          ],
-        });
-      })
-      .finally(() => setLoading(false));
+    loadDashboardStats();
   }, []);
+
+  const loadDashboardStats = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getStorageStats();
+      setStats(data);
+    } catch (err) {
+      console.error('Failed to load dashboard stats:', err);
+      setError('Failed to load dashboard data. Please try again later.');
+      // Fallback demo data if API fails
+      setStats({
+        total_files: 0,
+        total_storage_bytes: 0,
+        storage_limit_bytes: 5 * 1024 * 1024 * 1024,
+        storage_used_percent: 0,
+        last_backup: null,
+        recent_files: [],
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleLogout = () => {
     logout();
@@ -48,9 +55,7 @@ export default function DashboardHome() {
     return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
 
-  const storagePercent = stats
-    ? Math.min(100, Math.round((stats.storage_used_bytes / stats.storage_limit_bytes) * 100))
-    : 0;
+  const storagePercent = stats?.storage_used_percent || 0;
 
   const navItems = [
     { label: 'Dashboard', icon: <HomeIcon />, path: '/dashboard', active: true },
@@ -95,7 +100,7 @@ export default function DashboardHome() {
           <div className="db-storage-mini">
             <div className="db-storage-mini-label">
               <span>Storage</span>
-              <span>{formatBytes(stats.storage_used_bytes)} / {formatBytes(stats.storage_limit_bytes)}</span>
+              <span>{formatBytes(stats.total_storage_bytes || 0)} / {formatBytes(stats.storage_limit_bytes || 0)}</span>
             </div>
             <div className="db-storage-bar">
               <div
@@ -155,6 +160,11 @@ export default function DashboardHome() {
               <div className="db-loading-ring" />
               <p>Loading your vault...</p>
             </div>
+          ) : error ? (
+            <div className="db-error">
+              <p>{error}</p>
+              <button onClick={loadDashboardStats} className="db-retry-btn">Retry</button>
+            </div>
           ) : (
             <>
               {/* Stats grid */}
@@ -169,7 +179,7 @@ export default function DashboardHome() {
                 <StatCard
                   icon={<StorageIcon />}
                   label="Storage Used"
-                  value={formatBytes(stats?.storage_used_bytes ?? 0)}
+                  value={formatBytes(stats?.total_storage_bytes ?? 0)}
                   sub={`of ${formatBytes(stats?.storage_limit_bytes ?? 0)} total`}
                   color="#c8521f"
                 />
@@ -208,8 +218,8 @@ export default function DashboardHome() {
                     />
                   </div>
                   <div className="db-storage-labels">
-                    <span>{formatBytes(stats?.storage_used_bytes ?? 0)} used</span>
-                    <span>{formatBytes((stats?.storage_limit_bytes ?? 0) - (stats?.storage_used_bytes ?? 0))} free</span>
+                    <span>{formatBytes(stats?.total_storage_bytes ?? 0)} used</span>
+                    <span>{formatBytes((stats?.storage_limit_bytes ?? 0) - (stats?.total_storage_bytes ?? 0))} free</span>
                   </div>
                 </div>
               </div>
@@ -426,6 +436,14 @@ const styles = `
   .db-loading-ring { width:40px; height:40px; border:3px solid rgba(166,62,27,0.2); border-top-color:var(--ember); border-radius:50%; animation:spin .8s linear infinite; }
   @keyframes spin { to{transform:rotate(360deg);} }
 
+  /* ERROR */
+  .db-error { text-align:center; padding:40px; color:#e74c3c; background:rgba(231,76,60,0.1); border-radius:10px; }
+  .db-retry-btn {
+    margin-top:16px; padding:8px 20px; background:var(--ember); border:none; border-radius:6px;
+    color:white; cursor:pointer; font-size:13px; transition:opacity 0.2s;
+  }
+  .db-retry-btn:hover { opacity:0.9; }
+
   /* STATS */
   .db-stats-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
   .db-stat-card {
@@ -500,4 +518,3 @@ const styles = `
     .db-stats-grid { grid-template-columns:1fr 1fr; }
   }
 `;
-

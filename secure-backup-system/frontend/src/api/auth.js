@@ -39,11 +39,31 @@ export const authApi = {
     const response = await apiClient.get('/auth/me');
     return response.data;
   },
+
+  /**
+   * Change user password
+   * @param {string} oldPassword - Current password
+   * @param {string} newPassword - New password (min 8 characters)
+   * @returns {Promise} Password change response
+   */
+  changePassword: async (oldPassword, newPassword) => {
+    const formData = new URLSearchParams();
+    formData.append('old_password', oldPassword);
+    formData.append('new_password', newPassword);
+    
+    const response = await apiClient.post('/auth/change-password', formData, {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+    });
+    return response.data;
+  },
 };
 
 // Also export individual functions for convenience
 export const register = authApi.register;
 export const login = authApi.login;
 export const getMe = authApi.getMe;
+export const changePassword = authApi.changePassword;
 
 export default authApi;

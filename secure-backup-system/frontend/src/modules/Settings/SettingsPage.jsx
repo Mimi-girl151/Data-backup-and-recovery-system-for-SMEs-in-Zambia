@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAuthStore } from '../../store/authStore';
 import { Link } from 'react-router-dom';
+import { authApi } from '../../api/auth';
 
 export default function SettingsPage() {
   const { user, logout } = useAuthStore();
@@ -34,13 +35,18 @@ export default function SettingsPage() {
     setLoading(true);
     setMessage('');
     
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      await authApi.changePassword(currentPassword, newPassword);
       setMessage({ type: 'success', text: 'Password changed successfully!' });
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-    }, 1500);
+    } catch (error) {
+      const errorMsg = error.response?.data?.detail || 'Failed to change password';
+      setMessage({ type: 'error', text: errorMsg });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDeleteAccount = () => {

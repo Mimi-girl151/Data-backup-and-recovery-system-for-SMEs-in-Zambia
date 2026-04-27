@@ -22,3 +22,13 @@
 .animate-slide-up {
   animation: slide-up 0.3s ease-out;
 }
+/* Fix password input visibility */
+input[type="password"],
+input[type="text"] {
+  color: #f0ece8 !important;
+  background-color: #1f2f3a !important;
+}
+input::placeholder {
+  color: #8a9ba8 !important;
+}
+

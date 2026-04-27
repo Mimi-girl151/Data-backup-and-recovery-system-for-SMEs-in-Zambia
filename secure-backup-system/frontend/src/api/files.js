@@ -2,6 +2,15 @@ import apiClient from './client';
 
 export const filesApi = {
   /**
+   * Get storage statistics for dashboard
+   * @returns {Promise} Storage stats (total files, storage used, last backup, recent files)
+   */
+  getStorageStats: async () => {
+    const response = await apiClient.get('/files/stats');
+    return response.data;
+  },
+
+  /**
    * Upload a file chunk
    * @param {File} chunk - File chunk to upload
    * @param {string} originalName - Original filename
@@ -30,6 +39,47 @@ export const filesApi = {
       },
     });
     return response.data;
+  },
+
+  /**
+   * Upload a complete file with encryption
+   * @param {File} file - File to upload
+   * @param {string} encryptionPassword - Password for encryption
+   * @param {function} onProgress - Progress callback
+   * @returns {Promise} Upload response
+   */
+  uploadFile: async (file, encryptionPassword, onProgress) => {
+    // Import crypto functions dynamically
+    const { encryptFile } = await import('../crypto/aes-gcm');
+    const { calculateChecksum } = await import('../crypto/chunker');
+    
+    // Calculate checksum
+    const checksum = await calculateChecksum(file);
+    
+    // Encrypt the file
+    const { encryptedData, iv } = await encryptFile(file, encryptionPassword);
+    
+    // Convert IV to base64
+    const ivBase64 = btoa(String.fromCharCode(...new Uint8Array(iv)));
+    
+    // Upload as single chunk (for simplicity)
+    const chunkBlob = new Blob([encryptedData]);
+    
+    // Directly call uploadChunk using filesApi reference
+    const response = await filesApi.uploadChunk(
+      chunkBlob,
+      file.name,
+      ivBase64,
+      0,
+      1,
+      checksum,
+      file.size,
+      file.type
+    );
+    
+    if (onProgress) onProgress(100);
+    
+    return response;
   },
 
   /**
@@ -65,3 +115,13 @@ export const filesApi = {
     return response.data;
   },
 };
+
+// Export individual functions for convenience
+export const getStorageStats = filesApi.getStorageStats;
+export const uploadChunk = filesApi.uploadChunk;
+export const uploadFile = filesApi.uploadFile;
+export const listFiles = filesApi.listFiles;
+export const getDownloadInfo = filesApi.getDownloadInfo;
+export const deleteFile = filesApi.deleteFile;
+
+export default filesApi;
