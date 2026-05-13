@@ -9,7 +9,7 @@ export const authApi = {
    * @returns {Promise} Registration response
    */
   register: async (fullName, email, password) => {
-    const response = await apiClient.post('/auth/register', {
+    const response = await apiClient.post('/api/auth/register', {
       email: email,
       password: password,
       full_name: fullName,
@@ -24,7 +24,7 @@ export const authApi = {
    * @returns {Promise} Login response with token and user data
    */
   login: async (email, password) => {
-    const response = await apiClient.post('/auth/login', {
+    const response = await apiClient.post('/api/auth/login', {
       email,
       password,
     });
@@ -36,7 +36,7 @@ export const authApi = {
    * @returns {Promise} User data
    */
   getMe: async () => {
-    const response = await apiClient.get('/auth/me');
+    const response = await apiClient.get('/api/auth/me');
     return response.data;
   },
 
@@ -51,7 +51,7 @@ export const authApi = {
     formData.append('old_password', oldPassword);
     formData.append('new_password', newPassword);
     
-    const response = await apiClient.post('/auth/change-password', formData, {
+    const response = await apiClient.post('/api/auth/change-password', formData, {
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
       },

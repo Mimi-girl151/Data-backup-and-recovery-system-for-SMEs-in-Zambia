@@ -1,65 +1,92 @@
 services:
-  # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
     container_name: backup-postgres
     restart: unless-stopped
+    secrets:
+      - db_user
+      - db_password
+      - db_name
     environment:
-      POSTGRES_USER: ${DB_USER:-backupuser}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-backuppass123}
-      POSTGRES_DB: ${DB_NAME:-backupdb}
+      POSTGRES_USER_FILE: /run/secrets/db_user
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+      POSTGRES_DB_FILE: /run/secrets/db_name
     volumes:
       - ./postgres/data/pgdata:/var/lib/postgresql/data
       - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     ports:
       - "${DB_PORT:-5435}:5432"
     networks:
-      - backup-network
+      - data-nw
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-backupuser} -d ${DB_NAME:-backupdb}"]
+      test: ["CMD-SHELL", "pg_isready -U $$(cat /run/secrets/db_user) -d $$(cat /run/secrets/db_name)"]
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
-  # MinIO Object Storage (S3-compatible)
   minio:
     image: minio/minio:latest
     container_name: backup-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
+    secrets:
+      - minio_user
+      - minio_password
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+      MINIO_ROOT_USER_FILE: /run/secrets/minio_user
+      MINIO_ROOT_PASSWORD_FILE: /run/secrets/minio_password
+    ports:
+      - "9000:9000"
+      - "9001:9001"
     volumes:
       - ./minio/data:/data
-    ports:
-      - "${MINIO_API_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
     networks:
-      - backup-network
+      - data-nw
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
       timeout: 20s
       retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 512M
 
-  # Backend API (FastAPI)
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: backup-backend
     restart: unless-stopped
+    secrets:
+      - db_user
+      - db_password
+      - db_name
+      - jwt_secret
+      - minio_user
+      - minio_password
     environment:
-      DATABASE_URL: postgresql+asyncpg://${DB_USER:-backupuser}:${DB_PASSWORD:-backuppass123}@postgres:5432/${DB_NAME:-backupdb}
-      MINIO_ENDPOINT: minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+      DATABASE_URL: postgresql+asyncpg://backupuser:backuppass123@postgres:5432/backupdb
+      MINIO_ENDPOINT: backup-minio:9000
+      MINIO_ACCESS_KEY_FILE: /run/secrets/minio_user
+      MINIO_SECRET_KEY_FILE: /run/secrets/minio_password
       MINIO_BUCKET: ${MINIO_BUCKET:-backup-files}
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-this-secret-in-production-use-strong-random-string}
+      JWT_SECRET_KEY_FILE: /run/secrets/jwt_secret
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
       JWT_ACCESS_TOKEN_EXPIRE_MINUTES: ${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173,http://localhost}
       ENVIRONMENT: ${ENVIRONMENT:-development}
       DEBUG: ${DEBUG:-true}
     volumes:
@@ -73,9 +100,17 @@ services:
       minio:
         condition: service_healthy
     networks:
-      - backup-network
+      - app-nw
+      - data-nw
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
 
-  # Frontend (React) - Development
   frontend:
     build:
       context: ./frontend
@@ -83,7 +118,7 @@ services:
     container_name: backup-frontend
     restart: unless-stopped
     environment:
-      VITE_API_URL: ${VITE_API_URL:-http://localhost:8000/api}
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
     volumes:
       - ./frontend:/app
       - /app/node_modules
@@ -92,9 +127,17 @@ services:
     depends_on:
       - backend
     networks:
-      - backup-network
+      - web-nw
+      - app-nw
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
-  # Nginx Reverse Proxy (Production)
   nginx:
     image: nginx:1.25-alpine
     container_name: backup-nginx
@@ -102,18 +145,53 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/security-headers.conf:/etc/nginx/security-headers.conf:ro
-      - ./frontend/dist:/usr/share/nginx/html:ro
     ports:
-      - "${NGINX_HTTP_PORT:-80}:80"
-      - "${NGINX_HTTPS_PORT:-443}:443"
+      - "80:80"
+      - "443:443"
     depends_on:
-      - backend
-      - frontend
+      backend:
+        condition: service_started
+      frontend:
+        condition: service_started
     networks:
-      - backup-network
+      - web-nw
+      - app-nw
+      - data-nw
     profiles:
       - production
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
 
 networks:
-  backup-network:
+  web-nw:
+    name: web-nw
     driver: bridge
+    internal: false
+  app-nw:
+    name: app-nw
+    driver: bridge
+    internal: false
+  data-nw:
+    name: data-nw
+    driver: bridge
+    internal: true
+
+secrets:
+  db_user:
+    file: ./secrets/db_user.txt
+  db_password:
+    file: ./secrets/db_password.txt
+  db_name:
+    file: ./secrets/db_name.txt
+  jwt_secret:
+    file: ./secrets/jwt_secret.txt
+  minio_user:
+    file: ./secrets/minio_user.txt
+  minio_password:
+    file: ./secrets/minio_password.txt

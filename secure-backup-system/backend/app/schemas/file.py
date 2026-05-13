@@ -28,6 +28,7 @@ class FileDownloadResponse(BaseModel):
     file_size: int
     mime_type: Optional[str]
     iv: str
+    salt: Optional[str] = None
     checksum: Optional[str]
     chunk_count: int
     presigned_urls: List[str]

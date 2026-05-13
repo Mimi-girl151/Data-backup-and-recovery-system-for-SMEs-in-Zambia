@@ -1,7 +1,9 @@
 from datetime import timedelta
 from typing import Annotated
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, Form
+from fastapi import APIRouter, Depends, HTTPException, status, Form, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.db.session import get_db
@@ -23,6 +25,9 @@ from app.config import settings
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
+# Initialize rate limiter for auth endpoints
+limiter = Limiter(key_func=get_remote_address)
+
 
 @router.post(
     "/register",
@@ -31,7 +36,9 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
     summary="Register a new user",
     description="Create a new user account with email and password"
 )
+@limiter.limit("10/minute; 50/hour")
 async def register(
+    request: Request,
     user_data: UserCreate,
     db: AsyncSession = Depends(get_db)
 ) -> UserResponse:
@@ -39,6 +46,7 @@ async def register(
     Register a new user.
     
     Args:
+        request: FastAPI request object (for rate limiting)
         user_data: User registration data (email, password, full_name)
         db: Database session
         
@@ -94,7 +102,9 @@ async def register(
     summary="Login to get access token",
     description="Authenticate user and return JWT access token"
 )
+@limiter.limit("5/minute; 20/hour")
 async def login(
+    request: Request,
     credentials: UserLogin,
     db: AsyncSession = Depends(get_db)
 ) -> Token:
@@ -102,6 +112,7 @@ async def login(
     Login user and return JWT token.
     
     Args:
+        request: FastAPI request object (for rate limiting)
         credentials: User login credentials (email, password)
         db: Database session
         
@@ -192,7 +203,9 @@ async def get_me(
     summary="Change user password",
     description="Change password for the currently authenticated user"
 )
+@limiter.limit("3/minute; 10/hour")
 async def change_password(
+    request: Request,
     old_password: str = Form(...),
     new_password: str = Form(...),
     current_user: User = Depends(get_current_active_user),
@@ -203,6 +216,7 @@ async def change_password(
     Requires old password for verification.
     
     Args:
+        request: FastAPI request object (for rate limiting)
         old_password: Current password
         new_password: New password (min 8 characters)
         current_user: Authenticated user

@@ -39,6 +39,11 @@ class FileMetadata(Base):
         nullable=False,
         comment="Initialization vector for AES-256-GCM"
     )
+    salt: Mapped[str] = mapped_column(
+        String(255),
+        nullable=True,
+        comment="Salt for PBKDF2 key derivation"
+    )
     checksum: Mapped[str] = mapped_column(
         String(128),
         nullable=True,

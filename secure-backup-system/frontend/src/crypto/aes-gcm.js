@@ -46,12 +46,12 @@ export const deriveKey = async (password, salt) => {
     ['deriveKey']
   );
   
-  // Derive key using PBKDF2
+  // Derive key using PBKDF2 with 600,000 iterations (OWASP 2024 recommendation)
   const key = await window.crypto.subtle.deriveKey(
     {
       name: 'PBKDF2',
       salt: salt,
-      iterations: 100000,
+      iterations: 600000,  // Increased from 100,000 to meet OWASP 2024 minimum
       hash: 'SHA-256',
     },
     keyMaterial,

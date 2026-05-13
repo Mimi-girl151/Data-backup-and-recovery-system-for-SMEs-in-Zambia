@@ -6,7 +6,7 @@ export const filesApi = {
    * @returns {Promise} Storage stats (total files, storage used, last backup, recent files)
    */
   getStorageStats: async () => {
-    const response = await apiClient.get('/files/stats');
+    const response = await apiClient.get('/api/files/stats');
     return response.data;
   },
 
@@ -15,6 +15,7 @@ export const filesApi = {
    * @param {File} chunk - File chunk to upload
    * @param {string} originalName - Original filename
    * @param {string} iv - Initialization vector as base64
+   * @param {string} salt - Salt for key derivation as base64
    * @param {number} chunkIndex - Index of this chunk
    * @param {number} totalChunks - Total number of chunks
    * @param {string} checksum - File checksum
@@ -22,18 +23,19 @@ export const filesApi = {
    * @param {string} mimeType - File MIME type
    * @returns {Promise} Upload response
    */
-  uploadChunk: async (chunk, originalName, iv, chunkIndex, totalChunks, checksum, fileSize, mimeType) => {
+  uploadChunk: async (chunk, originalName, iv, salt, chunkIndex, totalChunks, checksum, fileSize, mimeType) => {
     const formData = new FormData();
     formData.append('file', chunk);
     formData.append('original_name', originalName);
     formData.append('iv', iv);
+    formData.append('salt', salt);
     formData.append('chunk_index', chunkIndex.toString());
     formData.append('total_chunks', totalChunks.toString());
     formData.append('checksum', checksum);
     formData.append('file_size', fileSize.toString());
     formData.append('mime_type', mimeType);
     
-    const response = await apiClient.post('/files/upload', formData, {
+    const response = await apiClient.post('/api/files/upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
@@ -49,27 +51,23 @@ export const filesApi = {
    * @returns {Promise} Upload response
    */
   uploadFile: async (file, encryptionPassword, onProgress) => {
-    // Import crypto functions dynamically
     const { encryptFile } = await import('../crypto/aes-gcm');
     const { calculateChecksum } = await import('../crypto/chunker');
     
-    // Calculate checksum
     const checksum = await calculateChecksum(file);
+    const { encryptedData, iv, salt } = await encryptFile(file, encryptionPassword);
     
-    // Encrypt the file
-    const { encryptedData, iv } = await encryptFile(file, encryptionPassword);
-    
-    // Convert IV to base64
     const ivBase64 = btoa(String.fromCharCode(...new Uint8Array(iv)));
+    const saltBase64 = btoa(String.fromCharCode(...new Uint8Array(salt)));
     
-    // Upload as single chunk (for simplicity)
     const chunkBlob = new Blob([encryptedData]);
     
-    // Directly call uploadChunk using filesApi reference
+    // Use filesApi.uploadChunk instead of this.uploadChunk
     const response = await filesApi.uploadChunk(
       chunkBlob,
       file.name,
       ivBase64,
+      saltBase64,
       0,
       1,
       checksum,
@@ -89,7 +87,7 @@ export const filesApi = {
    * @returns {Promise<Array>} List of files
    */
   listFiles: async (skip = 0, limit = 50) => {
-    const response = await apiClient.get('/files/list', {
+    const response = await apiClient.get('/api/files/list', {
       params: { skip, limit },
     });
     return response.data;
@@ -98,10 +96,10 @@ export const filesApi = {
   /**
    * Get download information for a file
    * @param {string} fileId - File ID
-   * @returns {Promise<Object>} Download info with presigned URLs
+   * @returns {Promise<Object>} Download info with presigned URLs, IV, and SALT
    */
   getDownloadInfo: async (fileId) => {
-    const response = await apiClient.get(`/files/${fileId}/download`);
+    const response = await apiClient.get(`/api/files/${fileId}/download`);
     return response.data;
   },
 
@@ -111,7 +109,7 @@ export const filesApi = {
    * @returns {Promise<Object>} Delete response
    */
   deleteFile: async (fileId) => {
-    const response = await apiClient.delete(`/files/${fileId}`);
+    const response = await apiClient.delete(`/api/files/${fileId}`);
     return response.data;
   },
 };

@@ -1,13 +1,20 @@
 import { useState, useEffect } from 'react';
 import { useAuthStore } from '../../store/authStore';
 import { Link } from 'react-router-dom';
+import { filesApi } from '../../api/files';
+import { decryptFile } from '../../crypto/aes-gcm';
 
 export default function RecoveryPage() {
   const { user } = useAuthStore();
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [restoring, setRestoring] = useState(null);
+  const [downloading, setDownloading] = useState(null);
+  const [message, setMessage] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [decryptPassword, setDecryptPassword] = useState('');
+  const [showDecryptInput, setShowDecryptInput] = useState(null);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [currentFileInfo, setCurrentFileInfo] = useState(null);
 
   const navItems = [
     { label: 'Dashboard', icon: '📊', path: '/dashboard' },
@@ -17,38 +24,114 @@ export default function RecoveryPage() {
   ];
 
   useEffect(() => {
-    // Mock data - replace with API call later
-    const mockFiles = [
-      { id: 1, name: 'Q1-Report.pdf', size: 2400000, date: '2026-04-06T08:22:00Z', type: 'pdf' },
-      { id: 2, name: 'client-contracts.zip', size: 15800000, date: '2026-04-05T14:10:00Z', type: 'zip' },
-      { id: 3, name: 'database-export.sql', size: 890000, date: '2026-04-04T11:55:00Z', type: 'sql' },
-      { id: 4, name: 'payroll-march.xlsx', size: 340000, date: '2026-04-03T09:30:00Z', type: 'xlsx' },
-    ];
-    
-    setTimeout(() => {
-      setFiles(mockFiles);
-      setLoading(false);
-    }, 1000);
+    loadFiles();
   }, []);
 
+  const loadFiles = async () => {
+    setLoading(true);
+    try {
+      const fileList = await filesApi.listFiles();
+      setFiles(fileList);
+    } catch (error) {
+      console.error('Failed to load files:', error);
+      setMessage({ type: 'error', text: 'Failed to load files. Please try again.' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDownload = async (file) => {
+    setShowDecryptInput(file.id);
+    setDecryptPassword('');
+    setMessage(null);
+    setCurrentFileInfo(file);
+  };
+
+  const performDownload = async (file) => {
+    if (!decryptPassword || decryptPassword.length < 4) {
+      setMessage({ type: 'error', text: 'Please enter the decryption password (min 4 characters).' });
+      return;
+    }
+
+    setDownloading(file.id);
+    setMessage(null);
+    setDownloadProgress(0);
+
+    try {
+      // Step 1: Get download info with presigned URLs and salt
+      const downloadInfo = await filesApi.getDownloadInfo(file.id);
+      
+      // Step 2: Download encrypted file from the first presigned URL
+      setDownloadProgress(10);
+      
+      const response = await fetch(downloadInfo.presigned_urls[0]);
+      const encryptedData = await response.arrayBuffer();
+      
+      setDownloadProgress(50);
+      
+      // Step 3: Convert stored IV from base64 to Uint8Array
+      const iv = Uint8Array.from(atob(downloadInfo.iv), c => c.charCodeAt(0));
+      
+      // Step 4: Convert stored SALT from base64 to Uint8Array (CRITICAL FIX!)
+      const salt = Uint8Array.from(atob(downloadInfo.salt), c => c.charCodeAt(0));
+      
+      setDownloadProgress(70);
+      
+      // Step 5: Decrypt the file using the stored salt
+      const decryptedData = await decryptFile(encryptedData, decryptPassword, iv, salt);
+      
+      setDownloadProgress(90);
+      
+      // Step 6: Create download link and trigger browser download
+      const blob = new Blob([decryptedData], { type: file.mime_type || 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = file.original_filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      setDownloadProgress(100);
+      setMessage({ type: 'success', text: `File "${file.original_filename}" downloaded and decrypted successfully!` });
+      setShowDecryptInput(null);
+      setDecryptPassword('');
+      
+      setTimeout(() => setDownloadProgress(0), 2000);
+      
+    } catch (error) {
+      console.error('Download error:', error);
+      
+      // Check if it's a decryption error (wrong password)
+      if (error.message.includes('decrypt') || error.name === 'OperationError') {
+        setMessage({ type: 'error', text: 'Decryption failed: Incorrect password or corrupted file.' });
+      } else {
+        setMessage({ type: 'error', text: 'Download failed. Please try again.' });
+      }
+    } finally {
+      setDownloading(null);
+    }
+  };
+
   const formatBytes = (bytes) => {
-    if (bytes >= 1e9) return (bytes / 1e9).toFixed(1) + ' GB';
-    if (bytes >= 1e6) return (bytes / 1e6).toFixed(1) + ' MB';
-    if (bytes >= 1e3) return (bytes / 1e3).toFixed(1) + ' KB';
-    return bytes + ' B';
+    if (!bytes) return '0 Bytes';
+    if (bytes >= 1e9) return (bytes / 1e9).toFixed(2) + ' GB';
+    if (bytes >= 1e6) return (bytes / 1e6).toFixed(2) + ' MB';
+    if (bytes >= 1e3) return (bytes / 1e3).toFixed(2) + ' KB';
+    return bytes + ' Bytes';
   };
 
-  const formatDate = (iso) => {
-    const date = new Date(iso);
-    return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-  };
-
-  const handleRestore = async (file) => {
-    setRestoring(file.id);
-    setTimeout(() => {
-      alert(`Restoring: ${file.name}\nThis will download the decrypted file.`);
-      setRestoring(null);
-    }, 1500);
+  const formatDate = (isoString) => {
+    if (!isoString) return 'Unknown';
+    const date = new Date(isoString);
+    return date.toLocaleDateString('en-GB', { 
+      day: '2-digit', 
+      month: 'short', 
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
   };
 
   return (
@@ -113,95 +196,140 @@ export default function RecoveryPage() {
 
         <div className="db-content">
           <div className="db-section">
-            <div className="overflow-x-auto">
-              <table className="db-table">
-                <thead>
-                  <tr>
-                    <th>File Name</th>
-                    <th>Size</th>
-                    <th>Date</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {loading ? (
-                    <tr>
-                      <td colSpan="4" className="db-loading-cell">
-                        <div className="db-spinner" />
-                        Loading files...
-                      </td>
-                    </tr>
-                  ) : files.length === 0 ? (
-                    <tr>
-                      <td colSpan="4" className="db-empty-cell">
-                        No backup files found. Go to Backup to upload files.
-                      </td>
-                    </tr>
-                  ) : (
-                    files.map((file) => (
-                      <tr key={file.id}>
-                        <td>
-                          <div className="db-file-info">
-                            <span className="db-file-icon">📄</span>
-                            <span>{file.name}</span>
-                          </div>
-                        </td>
-                        <td>{formatBytes(file.size)}</td>
-                        <td>{formatDate(file.date)}</td>
-                        <td>
-                          <button
-                            onClick={() => handleRestore(file)}
-                            disabled={restoring === file.id}
-                            className="db-restore-btn"
-                          >
-                            {restoring === file.id ? 'Restoring...' : 'Restore'}
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+            <div className="db-section-header">
+              <h2 className="db-section-title">Your Backed Up Files</h2>
+              <button onClick={loadFiles} className="db-refresh-btn" disabled={loading}>
+                🔄
+              </button>
             </div>
+
+            {loading ? (
+              <div className="db-loading">
+                <div className="db-spinner" />
+                <p>Loading your files...</p>
+              </div>
+            ) : files.length === 0 ? (
+              <div className="db-empty">
+                <p>No backups found. Go to <Link to="/backup" className="db-link">Backup</Link> to upload your first file.</p>
+              </div>
+            ) : (
+              <div className="db-file-list">
+                {files.map((file) => (
+                  <div key={file.id} className="db-file-row">
+                    <div className="db-file-icon">📄</div>
+                    <div className="db-file-info">
+                      <p className="db-file-name">{file.original_filename}</p>
+                      <p className="db-file-meta">{formatBytes(file.file_size)} · {formatDate(file.created_at)}</p>
+                    </div>
+                    <div className="db-file-action">
+                      {showDecryptInput === file.id ? (
+                        <div className="db-decrypt-input">
+                          <input
+                            type="password"
+                            placeholder="Encryption password"
+                            value={decryptPassword}
+                            onChange={(e) => setDecryptPassword(e.target.value)}
+                            className="db-password-small"
+                            autoFocus
+                            onKeyPress={(e) => e.key === 'Enter' && performDownload(file)}
+                          />
+                          <button
+                            onClick={() => performDownload(file)}
+                            disabled={downloading === file.id}
+                            className="db-confirm-btn"
+                            title="Confirm"
+                          >
+                            {downloading === file.id ? '⏳' : '✅'}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setShowDecryptInput(null);
+                              setDecryptPassword('');
+                            }}
+                            className="db-cancel-btn"
+                            title="Cancel"
+                          >
+                            ❌
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => handleDownload(file)}
+                          disabled={downloading === file.id}
+                          className="db-restore-btn"
+                        >
+                          {downloading === file.id ? '⏳ Downloading...' : '🔓 Restore'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Progress Bar */}
+            {downloading && currentFileInfo && downloadProgress > 0 && (
+              <div className="db-progress-section">
+                <div className="db-progress-header">
+                  <span>Decrypting: {currentFileInfo.original_filename}</span>
+                  <span>{downloadProgress}%</span>
+                </div>
+                <div className="db-progress-bar">
+                  <div 
+                    className="db-progress-fill"
+                    style={{ width: `${downloadProgress}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Message Display */}
+            {message && (
+              <div className={`db-message db-message--${message.type}`}>
+                {message.type === 'success' ? '✅' : '❌'} {message.text}
+              </div>
+            )}
           </div>
 
           <div className="db-section">
             <h3 className="db-section-title">Restore Notice</h3>
             <p className="db-section-text">
-              Files are encrypted with your password. You will need your encryption key to decrypt restored files.
+              Files are encrypted with the password you provided during backup.
+              You will need that exact password to decrypt and restore each file.
+            </p>
+            <p className="db-section-text db-mt-2">
+              ⚠️ The server never stores your encryption password. If you lose it, 
+              the file cannot be recovered.
             </p>
           </div>
         </div>
       </main>
 
-      <style>{styles}</style>
+      <style>{dashboardStyles}</style>
     </div>
   );
 }
 
-const styles = `
+const dashboardStyles = `
   @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Jost:wght@300;400;500;600&display=swap');
   
   :root {
     --deep: #1a2730;
     --ember: #a63e1b;
     --ember-l: #c8521f;
-    --ember-glow: rgba(166,62,27,0.3);
     --surface: #1f2f3a;
     --surface2: #243642;
-    --surface3: #2a3d4a;
     --border: rgba(166,62,27,0.2);
     --border2: rgba(255,255,255,0.06);
     --text: #e8ddd4;
     --muted: #8a9ba8;
     --white: #f0ece8;
+    --success: #27ae60;
+    --danger: #e74c3c;
   }
 
-  * {
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  a { text-decoration: none; }
 
   .db-root {
     display: flex;
@@ -224,13 +352,8 @@ const styles = `
     pointer-events: none;
   }
 
-  @keyframes gridMove {
-    to {
-      background-position: 40px 40px;
-    }
-  }
+  @keyframes gridMove { to { background-position: 40px 40px; } }
 
-  /* Sidebar */
   .db-sidebar {
     position: relative;
     z-index: 10;
@@ -243,13 +366,8 @@ const styles = `
     overflow: hidden;
   }
 
-  .db-sidebar--open {
-    width: 230px;
-  }
-
-  .db-sidebar--closed {
-    width: 60px;
-  }
+  .db-sidebar--open { width: 230px; }
+  .db-sidebar--closed { width: 60px; }
 
   .db-logo {
     display: flex;
@@ -260,20 +378,15 @@ const styles = `
     min-height: 68px;
   }
 
-  .db-vault-icon {
-    font-size: 28px;
-  }
-
+  .db-vault-icon { font-size: 28px; }
   .db-logo-name {
     display: block;
     font-family: 'Cinzel', serif;
     font-size: 14px;
     font-weight: 700;
     color: var(--white);
-    letter-spacing: 1px;
     white-space: nowrap;
   }
-
   .db-logo-sub {
     display: block;
     font-size: 9px;
@@ -300,30 +413,17 @@ const styles = `
     color: var(--muted);
     font-size: 13px;
     font-weight: 500;
-    transition: background 0.2s, color 0.2s;
+    transition: all 0.2s;
     white-space: nowrap;
     text-decoration: none;
   }
-
-  .db-nav-item:hover {
-    background: rgba(166, 62, 27, 0.12);
-    color: var(--white);
-  }
-
+  .db-nav-item:hover { background: rgba(166,62,27,0.12); color: var(--white); }
   .db-nav-item--active {
-    background: rgba(166, 62, 27, 0.2);
+    background: rgba(166,62,27,0.2);
     color: var(--ember-l);
     border-left: 2px solid var(--ember);
   }
-
-  .db-nav-icon {
-    flex-shrink: 0;
-    font-size: 18px;
-  }
-
-  .db-nav-label {
-    overflow: hidden;
-  }
+  .db-nav-icon { font-size: 18px; }
 
   .db-sidebar-footer {
     padding: 12px 10px;
@@ -331,7 +431,6 @@ const styles = `
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
   }
 
   .db-user-info {
@@ -352,51 +451,30 @@ const styles = `
     font-size: 13px;
     font-weight: 700;
     color: #fff;
-    flex-shrink: 0;
   }
 
-  .db-user-name {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--white);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
+  .db-user-name { font-size: 12px; font-weight: 600; color: var(--white); white-space: nowrap; }
+  .db-user-role { font-size: 10px; color: var(--muted); white-space: nowrap; }
 
-  .db-user-role {
-    font-size: 10px;
-    color: var(--muted);
-    white-space: nowrap;
-  }
-
-  /* Main Content */
   .db-main {
     flex: 1;
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    position: relative;
     z-index: 2;
   }
 
   .db-header {
     padding: 18px 28px;
     border-bottom: 1px solid var(--border2);
-    background: rgba(26, 39, 48, 0.8);
+    background: rgba(26,39,48,0.8);
     backdrop-filter: blur(10px);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    flex-shrink: 0;
   }
 
-  .db-header-left {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-  }
-
+  .db-header-left { display: flex; align-items: center; gap: 14px; }
   .db-toggle-btn {
     background: none;
     border: 1px solid var(--border);
@@ -404,42 +482,20 @@ const styles = `
     padding: 7px;
     color: var(--muted);
     cursor: pointer;
-    display: flex;
-    align-items: center;
-    transition: color 0.2s;
     font-size: 16px;
   }
+  .db-toggle-btn:hover { color: var(--white); }
+  .db-page-title { font-family: 'Cinzel', serif; font-size: 20px; font-weight: 600; color: var(--white); }
+  .db-page-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
 
-  .db-toggle-btn:hover {
-    color: var(--white);
-  }
-
-  .db-page-title {
-    font-family: 'Cinzel', serif;
-    font-size: 20px;
-    font-weight: 600;
-    color: var(--white);
-  }
-
-  .db-page-sub {
-    font-size: 12px;
-    color: var(--muted);
-    margin-top: 2px;
-  }
-
-  .db-header-right {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
+  .db-header-right { display: flex; align-items: center; gap: 12px; }
   .db-enc-badge {
     display: flex;
     align-items: center;
     gap: 6px;
     padding: 6px 12px;
-    background: rgba(39, 126, 82, 0.12);
-    border: 1px solid rgba(39, 126, 82, 0.3);
+    background: rgba(39,126,82,0.12);
+    border: 1px solid rgba(39,126,82,0.3);
     border-radius: 20px;
     font-size: 11px;
     color: #52c788;
@@ -461,107 +517,191 @@ const styles = `
     padding: 20px;
   }
 
+  .db-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+
   .db-section-title {
     font-family: 'Cinzel', serif;
     font-size: 14px;
     font-weight: 600;
     color: var(--white);
     letter-spacing: 1px;
-    margin-bottom: 12px;
   }
 
-  .db-section-text {
-    font-size: 13px;
+  .db-refresh-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
     color: var(--muted);
-    line-height: 1.5;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s;
+  }
+  .db-refresh-btn:hover { color: var(--white); border-color: var(--ember); }
+
+  .db-file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
 
-  /* Table Styles */
-  .db-table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-
-  .db-table th {
-    text-align: left;
-    padding: 12px 16px;
-    color: var(--muted);
-    font-weight: 500;
-    font-size: 12px;
-    letter-spacing: 1px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .db-table td {
-    padding: 14px 16px;
-    border-bottom: 1px solid var(--border2);
-    color: var(--text);
-    font-size: 13px;
-  }
-
-  .db-table tr:hover {
-    background: rgba(255, 255, 255, 0.03);
-  }
-
-  .db-file-info {
+  .db-file-row {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 14px;
+    padding: 12px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.02);
+    transition: background 0.2s;
   }
+  .db-file-row:hover { background: rgba(255, 255, 255, 0.05); }
 
-  .db-file-icon {
-    font-size: 20px;
-  }
+  .db-file-icon { font-size: 24px; }
+  .db-file-info { flex: 1; }
+  .db-file-name { font-size: 14px; font-weight: 500; color: var(--white); }
+  .db-file-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
 
   .db-restore-btn {
     padding: 6px 16px;
-    background: rgba(166, 62, 27, 0.15);
+    background: rgba(166,62,27,0.15);
     border: 1px solid var(--border);
-    border-radius: 5px;
-    font-size: 11px;
+    border-radius: 6px;
+    font-size: 12px;
     color: var(--ember-l);
     cursor: pointer;
     transition: all 0.2s;
   }
-
   .db-restore-btn:hover:not(:disabled) {
-    background: rgba(166, 62, 27, 0.3);
+    background: rgba(166,62,27,0.3);
     transform: translateY(-1px);
   }
+  .db-restore-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-  .db-restore-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+  .db-decrypt-input {
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
 
-  .db-loading-cell, .db-empty-cell {
-    text-align: center;
-    padding: 40px !important;
+  .db-password-small {
+    padding: 6px 10px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--white);
+    font-size: 12px;
+    width: 140px;
+    outline: none;
+  }
+  .db-password-small:focus { border-color: var(--ember); }
+
+  .db-confirm-btn, .db-cancel-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 8px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s;
+  }
+  .db-confirm-btn {
+    background: rgba(39,174,96,0.15);
+    border-color: rgba(39,174,96,0.3);
+    color: var(--success);
+  }
+  .db-confirm-btn:hover:not(:disabled) { background: rgba(39,174,96,0.25); }
+  .db-cancel-btn {
+    background: rgba(231,76,60,0.15);
+    border-color: rgba(231,76,60,0.3);
+    color: var(--danger);
+  }
+  .db-cancel-btn:hover { background: rgba(231,76,60,0.25); }
+  .db-confirm-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .db-progress-section { margin-top: 16px; }
+  .db-progress-header {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .db-progress-bar {
+    height: 4px;
+    background: rgba(166,62,27,0.15);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .db-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--ember), var(--ember-l));
+    border-radius: 4px;
+    transition: width 0.3s ease;
+  }
+
+  .db-message {
+    margin-top: 16px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+  }
+  .db-message--success {
+    background: rgba(39,174,96,0.1);
+    border: 1px solid rgba(39,174,96,0.3);
+    color: var(--success);
+  }
+  .db-message--error {
+    background: rgba(231,76,60,0.1);
+    border: 1px solid rgba(231,76,60,0.3);
+    color: var(--danger);
+  }
+
+  .db-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    gap: 12px;
     color: var(--muted);
   }
 
   .db-spinner {
-    display: inline-block;
-    width: 20px;
-    height: 20px;
+    width: 30px;
+    height: 30px;
     border: 2px solid var(--border);
     border-top-color: var(--ember);
     border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    margin-right: 8px;
-    vertical-align: middle;
+    animation: spin 0.6s linear infinite;
   }
+
+  .db-empty {
+    text-align: center;
+    padding: 40px;
+    color: var(--muted);
+  }
+
+  .db-link {
+    color: var(--ember-l);
+    text-decoration: none;
+  }
+  .db-link:hover { text-decoration: underline; }
+
+  .db-mt-2 { margin-top: 8px; }
 
   @keyframes spin {
     to { transform: rotate(360deg); }
   }
 
   @media (max-width: 680px) {
-    .db-sidebar {
-      display: none;
-    }
-    .db-content {
-      padding: 16px;
-    }
+    .db-sidebar { display: none; }
+    .db-content { padding: 16px; }
+    .db-file-row { flex-wrap: wrap; }
+    .db-file-action { width: 100%; margin-top: 8px; }
   }
 `;

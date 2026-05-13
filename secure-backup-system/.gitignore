@@ -55,4 +55,6 @@ logs/
 *.log
 
 # Keep package-lock for consistent builds
-!frontend/package-lock.json
+!frontend/package-lock.jsonsecrets/
+secrets/
+*.txt
