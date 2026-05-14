@@ -117,7 +117,7 @@ async def login(
         db: Database session
         
     Returns:
-        Token: JWT access token
+        Token: JWT access token with user data
         
     Raises:
         HTTPException: If credentials are invalid
@@ -163,10 +163,19 @@ async def login(
         expires_delta=access_token_expires
     )
     
+    # Return token with user data
     return Token(
         access_token=access_token,
         token_type="bearer",
-        expires_in=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        expires_in=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        user={
+            "id": user.id,
+            "email": user.email,
+            "full_name": user.full_name,
+            "role": user.role,
+            "is_active": user.is_active,
+            "created_at": user.created_at,
+        }
     )
 
 

@@ -24,7 +24,6 @@ export default function DashboardHome() {
     } catch (err) {
       console.error('Failed to load dashboard stats:', err);
       setError('Failed to load dashboard data. Please try again later.');
-      // Fallback demo data if API fails
       setStats({
         total_files: 0,
         total_storage_bytes: 0,
@@ -255,28 +254,6 @@ export default function DashboardHome() {
                   </div>
                 )}
               </div>
-
-              {/* Quick actions */}
-              <div className="db-section">
-                <h2 className="db-section-title" style={{ marginBottom: '14px' }}>Quick Actions</h2>
-                <div className="db-actions-grid">
-                  <Link to="/backup" className="db-action-card">
-                    <UploadIcon />
-                    <span className="db-action-label">Backup Files</span>
-                    <span className="db-action-sub">Encrypt & upload</span>
-                  </Link>
-                  <Link to="/recovery" className="db-action-card">
-                    <DownloadIcon />
-                    <span className="db-action-label">Restore Files</span>
-                    <span className="db-action-sub">Decrypt & download</span>
-                  </Link>
-                  <Link to="/settings" className="db-action-card">
-                    <SettingsIcon />
-                    <span className="db-action-label">Settings</span>
-                    <span className="db-action-sub">Account & security</span>
-                  </Link>
-                </div>
-              </div>
             </>
           )}
         </div>
@@ -493,24 +470,11 @@ const styles = `
   }
   .db-restore-btn:hover { background:rgba(166,62,27,0.3); }
 
-  /* ACTIONS */
-  .db-actions-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
-  .db-action-card {
-    background:rgba(255,255,255,0.03); border:1px solid var(--border2);
-    border-radius:10px; padding:20px 16px;
-    display:flex; flex-direction:column; align-items:center; gap:8px; text-align:center;
-    color:var(--muted); transition:background .2s,border-color .2s,color .2s;
-  }
-  .db-action-card:hover { background:rgba(166,62,27,0.1); border-color:var(--border); color:var(--white); }
-  .db-action-label { font-size:13px; font-weight:600; color:var(--white); }
-  .db-action-sub { font-size:11px; }
-
   .db-empty { text-align:center; padding:30px; color:var(--muted); font-size:13px; }
   .db-link { color:var(--ember-l); }
 
   @media(max-width:900px){
     .db-stats-grid { grid-template-columns:repeat(2,1fr); }
-    .db-actions-grid { grid-template-columns:repeat(2,1fr); }
   }
   @media(max-width:600px){
     .db-sidebar { display:none; }
