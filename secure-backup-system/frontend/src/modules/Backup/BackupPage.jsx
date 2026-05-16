@@ -13,6 +13,7 @@ export default function BackupPage() {
   const [encryptionPassword, setEncryptionPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showPasswordInput, setShowPasswordInput] = useState(false);
+  const [customFileName, setCustomFileName] = useState('');
 
   const navItems = [
     { label: 'Dashboard', icon: <HomeIcon />, path: '/dashboard' },
@@ -29,6 +30,7 @@ export default function BackupPage() {
       setShowPasswordInput(true);
       setEncryptionPassword('');
       setShowPassword(false);
+      setCustomFileName(file.name);
     }
   };
 
@@ -48,9 +50,12 @@ export default function BackupPage() {
     setMessage(null);
 
     try {
+      const finalFileName = customFileName.trim() !== '' ? customFileName : selectedFile.name;
+
       const response = await filesApi.uploadFile(
         selectedFile,
         encryptionPassword,
+        finalFileName,
         (p) => setProgress(p)
       );
       
@@ -58,6 +63,8 @@ export default function BackupPage() {
       setSelectedFile(null);
       setShowPasswordInput(false);
       setEncryptionPassword('');
+      setCustomFileName('');
+      setShowPassword(false);
       
       const fileInput = document.getElementById('file-upload');
       if (fileInput) fileInput.value = '';
@@ -163,7 +170,49 @@ export default function BackupPage() {
               </label>
             </div>
 
-            {/* Encryption Password Input with Show/Hide Toggle */}
+            {/* Custom Filename Input */}
+            {showPasswordInput && selectedFile && !uploading && (
+              <div className="mt-4 p-4 bg-surface2 rounded-lg border border-border">
+                <label className="block text-sm font-medium text-white mb-2">
+                  File Name (optional)
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    className="w-full px-4 py-2 rounded-lg text-white focus:outline-none focus:border-ember pr-10"
+                    style={{ backgroundColor: "#1a2730", color: "#f0ece8", border: "1px solid rgba(166,62,27,0.2)" }}
+                    placeholder="Enter a custom name for this file"
+                    value={customFileName}
+                    onChange={(e) => setCustomFileName(e.target.value)}
+                  />
+                </div>
+                <p className="text-xs text-muted mt-2">
+                  💡 If left blank, the original filename will be used
+                </p>
+              </div>
+            )}
+
+            {/* Supported File Types Notice */}
+            {!selectedFile && (
+              <div className="mt-4">
+                <div className="flex flex-wrap gap-2 justify-center">
+                  <span className="px-2 py-1 bg-surface2 rounded-md text-xs text-white">📄 PDF</span>
+                  <span className="px-2 py-1 bg-surface2 rounded-md text-xs text-white">📝 DOC/DOCX</span>
+                  <span className="px-2 py-1 bg-surface2 rounded-md text-xs text-white">📊 XLS/XLSX</span>
+                  <span className="px-2 py-1 bg-surface2 rounded-md text-xs text-white">🖼️ JPG/PNG</span>
+                  <span className="px-2 py-1 bg-surface2 rounded-md text-xs text-white">🎵 MP3</span>
+                  <span className="px-2 py-1 bg-surface2 rounded-md text-xs text-white">🎬 MP4</span>
+                  <span className="px-2 py-1 bg-surface2 rounded-md text-xs text-white">📦 ZIP</span>
+                  <span className="px-2 py-1 bg-surface2 rounded-md text-xs text-white">📄 TXT</span>
+                  <span className="px-2 py-1 bg-surface2 rounded-md text-xs text-white">💾 JSON</span>
+                </div>
+                <p className="text-xs text-muted text-center mt-2">
+                  ✨ Any file type works — all are encrypted before upload
+                </p>
+              </div>
+            )}
+
+            {/* Encryption Password Input */}
             {showPasswordInput && selectedFile && !uploading && (
               <div className="mt-4 p-4 bg-surface2 rounded-lg border border-border">
                 <label className="block text-sm font-medium text-white mb-2">
@@ -172,7 +221,8 @@ export default function BackupPage() {
                 <div className="relative">
                   <input
                     type={showPassword ? 'text' : 'password'}
-                    className="w-full px-4 py-2 rounded-lg text-white focus:outline-none focus:border-ember pr-10" style={{ backgroundColor: "#1a2730", color: "#f0ece8", border: "1px solid rgba(166,62,27,0.2)" }}
+                    className="w-full px-4 py-2 rounded-lg text-white focus:outline-none focus:border-ember pr-10"
+                    style={{ backgroundColor: "#1a2730", color: "#f0ece8", border: "1px solid rgba(166,62,27,0.2)" }}
                     placeholder="Enter a password to encrypt this file"
                     value={encryptionPassword}
                     onChange={(e) => setEncryptionPassword(e.target.value)}
@@ -234,7 +284,7 @@ export default function BackupPage() {
             <h3 className="text-white font-medium mb-2">Security Notice</h3>
             <p className="text-muted text-sm">
               Your files are encrypted with AES-256-GCM <strong>before</strong> they leave your browser.
-              The encryption key is derived from your password using PBKDF2 (100,000 iterations).
+              The encryption key is derived from your password using PBKDF2 (600,000 iterations).
               The server never sees your unencrypted data or your encryption password.
             </p>
           </div>

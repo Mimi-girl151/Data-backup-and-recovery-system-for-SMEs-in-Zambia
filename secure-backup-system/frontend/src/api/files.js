@@ -1,28 +1,11 @@
 import apiClient from './client';
 
 export const filesApi = {
-  /**
-   * Get storage statistics for dashboard
-   * @returns {Promise} Storage stats (total files, storage used, last backup, recent files)
-   */
   getStorageStats: async () => {
     const response = await apiClient.get('/api/files/stats');
     return response.data;
   },
 
-  /**
-   * Upload a file chunk
-   * @param {File} chunk - File chunk to upload
-   * @param {string} originalName - Original filename
-   * @param {string} iv - Initialization vector as base64
-   * @param {string} salt - Salt for key derivation as base64
-   * @param {number} chunkIndex - Index of this chunk
-   * @param {number} totalChunks - Total number of chunks
-   * @param {string} checksum - File checksum
-   * @param {number} fileSize - Total file size
-   * @param {string} mimeType - File MIME type
-   * @returns {Promise} Upload response
-   */
   uploadChunk: async (chunk, originalName, iv, salt, chunkIndex, totalChunks, checksum, fileSize, mimeType) => {
     const formData = new FormData();
     formData.append('file', chunk);
@@ -43,14 +26,7 @@ export const filesApi = {
     return response.data;
   },
 
-  /**
-   * Upload a complete file with encryption
-   * @param {File} file - File to upload
-   * @param {string} encryptionPassword - Password for encryption
-   * @param {function} onProgress - Progress callback
-   * @returns {Promise} Upload response
-   */
-  uploadFile: async (file, encryptionPassword, onProgress) => {
+  uploadFile: async (file, encryptionPassword, customFileName, onProgress) => {
     const { encryptFile } = await import('../crypto/aes-gcm');
     const { calculateChecksum } = await import('../crypto/chunker');
     
@@ -62,10 +38,11 @@ export const filesApi = {
     
     const chunkBlob = new Blob([encryptedData]);
     
-    // Use filesApi.uploadChunk instead of this.uploadChunk
+    const finalFileName = customFileName && customFileName.trim() !== '' ? customFileName : file.name;
+    
     const response = await filesApi.uploadChunk(
       chunkBlob,
-      file.name,
+      finalFileName,
       ivBase64,
       saltBase64,
       0,
@@ -80,12 +57,6 @@ export const filesApi = {
     return response;
   },
 
-  /**
-   * List all files for the current user
-   * @param {number} skip - Pagination offset
-   * @param {number} limit - Pagination limit
-   * @returns {Promise<Array>} List of files
-   */
   listFiles: async (skip = 0, limit = 50) => {
     const response = await apiClient.get('/api/files/list', {
       params: { skip, limit },
@@ -93,28 +64,17 @@ export const filesApi = {
     return response.data;
   },
 
-  /**
-   * Get download information for a file
-   * @param {string} fileId - File ID
-   * @returns {Promise<Object>} Download info with presigned URLs, IV, and SALT
-   */
   getDownloadInfo: async (fileId) => {
     const response = await apiClient.get(`/api/files/${fileId}/download`);
     return response.data;
   },
 
-  /**
-   * Delete a file
-   * @param {string} fileId - File ID
-   * @returns {Promise<Object>} Delete response
-   */
   deleteFile: async (fileId) => {
     const response = await apiClient.delete(`/api/files/${fileId}`);
     return response.data;
   },
 };
 
-// Export individual functions for convenience
 export const getStorageStats = filesApi.getStorageStats;
 export const uploadChunk = filesApi.uploadChunk;
 export const uploadFile = filesApi.uploadFile;
